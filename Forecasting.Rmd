@@ -1,0 +1,70 @@
+---
+title: "forecasting"
+output: pdf_document
+date: "2025-11-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+options(warn = -1)
+library(quantmod)
+library(fpp3)
+library(readr)
+library(tsibble)
+library(dplyr)
+library(stringr)
+library(lubridate)
+```
+# Corn futures time serise analysis
+Corn futures closing price
+
+First get data and assign variable to corn closing price
+
+
+```{r}
+
+
+# ---------------------------
+# 1️⃣ Download Corn Futures data
+# ---------------------------
+getSymbols("ZC=F", src = "yahoo", from = "2024-01-01", to = "2024-10-31", auto.assign = TRUE)
+
+# ---------------------------
+# 2️⃣ Convert xts to tibble
+# ---------------------------
+corn_tibble <- tidy(`ZC=F`)
+
+# ---------------------------
+# 3️⃣ Convert to wide format
+# ---------------------------
+corn_wide <- corn_tibble %>%
+  mutate(index = as.Date(index)) %>%          # ensure Date type
+  distinct(index, series, .keep_all = TRUE) %>%  # remove duplicates
+  pivot_wider(
+    names_from = series,
+    values_from = value
+  )
+
+# ---------------------------
+# 4️⃣ Convert to tsibble
+# ---------------------------
+corn_tsibble <- as_tsibble(corn_wide, index = index)
+
+
+corn_tsibble <- corn_tsibble %>%
+  rename_with(~ str_replace(., "ZC=F\\.", ""), .cols = -index)
+
+# ---------------------------
+# Save the cleaned tsibble to CSV
+# ---------------------------
+write_csv(corn_tsibble, "corn_data.csv")
+
+# ---------------------------
+# Inspect
+# ---------------------------
+corn_tsibble
+```
+
