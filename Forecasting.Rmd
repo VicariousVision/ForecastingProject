@@ -1,11 +1,51 @@
 ---
-title: "forecasting"
-output: pdf_document
-date: "2025-11-07"
+title: "Assignment 4 Forecasting"
+author: ' '
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  bookdown::pdf_document2:
+    latex_engine: pdflatex
+    toc: false
+  bookdown::pdf_document: default
+fontsize: 12pt
+geometry: margin=18mm
+fontfamily: cmbright
+header-includes: \usepackage{sfmath}
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  fig.width = 6.5,
+  fig.height = 4.0,
+  dev = "cairo_pdf"   # Vector PDF output; keep text as text
+)
+library(fpp3)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(scales)
+library(tikzDevice)
+# Modern SI-style labeller (replacement for deprecated label_number_si())
+label_number_si <- function(...) {
+  scales::label_number(scale_cut = scales::cut_si("M"), ...)
+}
+
+# Sans-serif theme with no plot titles; captions come from fig.cap
+theme_set(
+  theme_minimal(base_family = "sans") +
+    theme(
+      plot.title = element_blank(),
+      plot.subtitle = element_blank(),
+      plot.caption = element_text(size = 9),
+      axis.title = element_text(size = 10),
+      axis.text = element_text(size = 9)
+    )
+)
 ```
 
 ```{r}
@@ -13,58 +53,231 @@ options(warn = -1)
 library(quantmod)
 library(fpp3)
 library(readr)
+library(broom)
 library(tsibble)
 library(dplyr)
 library(stringr)
 library(lubridate)
 ```
-# Corn futures time serise analysis
-Corn futures closing price
 
-First get data and assign variable to corn closing price
+# soybean futures time series analysis
 
+This document is an investigation into time series forecasting of Soybean futures closing price from the Chicago Board of Trade (CBOT). I will be using the Close price.
+
+The futures prices are quoted as "front month" prices which means that the prices for "rolls" from one contract to the next as they expire. When this rollover happens it is due to different expiration months, storage costs, contango, backwardation. In our case we will verify this by looking at how similar Adjusted and Close prices are to each other
+
+As our data is economic data, the possibility of adjusting for inflation arises. Fortunately due to the nature of how futures contracts are priced, forward looking interest changes, storage costs and inflation are already priced into the price when they are calculated. We care about nominal prices which reflect market behavior. For missing data, fill the previous data
+
+
+EXPLAIN WHY AGGREGATE TO MONTHLY
+its fine to work with nominal , exponential trend with nominal dollars
 
 ```{r}
+getSymbols("ZS=F", src = "yahoo", from = "2000-01-01", to = "2025-11-01", auto.assign = TRUE)
 
+soybean_tibble <- tidy(`ZS=F`)
 
-# ---------------------------
-# 1️⃣ Download Corn Futures data
-# ---------------------------
-getSymbols("ZC=F", src = "yahoo", from = "2024-01-01", to = "2024-10-31", auto.assign = TRUE)
-
-# ---------------------------
-# 2️⃣ Convert xts to tibble
-# ---------------------------
-corn_tibble <- tidy(`ZC=F`)
-
-# ---------------------------
-# 3️⃣ Convert to wide format
-# ---------------------------
-corn_wide <- corn_tibble %>%
-  mutate(index = as.Date(index)) %>%          # ensure Date type
-  distinct(index, series, .keep_all = TRUE) %>%  # remove duplicates
+soybean_wide <- soybean_tibble %>%
+  mutate(index = as.Date(index)) %>%          
   pivot_wider(
     names_from = series,
     values_from = value
   )
 
-# ---------------------------
-# 4️⃣ Convert to tsibble
-# ---------------------------
-corn_tsibble <- as_tsibble(corn_wide, index = index)
+
+soybean_tsibble <- as_tsibble(soybean_wide, index = index, regular = FALSE)
 
 
-corn_tsibble <- corn_tsibble %>%
-  rename_with(~ str_replace(., "ZC=F\\.", ""), .cols = -index)
+soybean_tsibble <- soybean_tsibble %>%
+  rename_with(~ str_replace(., "ZS=F\\.", ""), .cols = -index)
 
-# ---------------------------
-# Save the cleaned tsibble to CSV
-# ---------------------------
-write_csv(corn_tsibble, "corn_data.csv")
+soybean_tsibble <- soybean_tsibble |> 
+  fill(Open:Adjusted, .direction = "down")
 
-# ---------------------------
-# Inspect
-# ---------------------------
-corn_tsibble
+write_csv(soybean_tsibble, "soybean_data.csv")
 ```
 
+```{r}
+soybean_tsibble |>
+  autoplot(Close) +
+  geom_line(color  = "steelblue")+
+  labs(
+    title = "Closing Prices Soybean Futures 2000-2025",
+    x = "Year",
+    y = "Close Price (USD)"
+  ) +
+  theme_minimal()
+
+```
+
+# Average yearly prices
+
+```{r}
+yearly_soy <- soybean_tsibble |>
+  index_by(Year = year(index)) |>
+  summarise(across(where(is.numeric), \(x) mean(x, na.rm = TRUE)))
+
+ggplot(yearly_soy, aes(x = factor(Year), y = Close)) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "Yearly Average Closing Prices Soybean Futures",
+    x = "Year",
+    y = "Average Close Price (USD)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+# Top 5 years by average price
+
+```{r}
+# Find the top 5 years
+top_years <- yearly_soy |>
+  slice_max(order_by = Close, n =5) |>
+  pull(Year)
+
+# Based on the top_years vector, pass in the tsibble and filter the index for years that match top_years
+best_years <- soybean_tsibble %>%
+  filter(year(index) %in% top_years)
+
+# Plot it
+best_years %>%
+  gg_season(Close) +
+  geom_line(size = 0.9) +  
+   xlab("Month") +
+  ylab("Close price (USD)") +
+  ggtitle("Soybean Closing price 2000-2025 best performing years")
+
+```
+
+Due to temporal effects within the data, aggregating to a monthly time period will help smooth out daily fluctuations and provide a clearer view of underlying trends and seasonal patterns. Monthly aggregation reduces noise from daily volatility, making it easier to identify long-term trends and seasonal cycles that are crucial for effective forecasting. This can help us by smoothing out periods in our data where weeks in a certain month may start and end on different days, for example we may begin a month on a weekend where no trading takes place, this can create artificial dips in our data that do not reflect true market behaviour. Another reason for this is due to the nature of how futures are priced. 
+
+Futures are typically quoted for specific delivery months, and daily prices can be influenced by short-term market fluctuations, news events, and trading activities. From looking at the graph we can see many periods of upswings and downswings. Soybeans, being a cash crop, are subject to seasonal patterns based on planting and harvesting cycles, weather conditions, and global demand. These seasonal effects can create regular patterns in the data that are influenced by politics, weather and global demand for its derivatives like soybean oil and soybean meal. 
+
+Futures contracts are not the actual price of the physical commodity but rather a financial instrument that reflects market expectations of future prices. It is a contract that binds a buyer and seller to an agreed price to take delivery of the commodity at a future date. They are standardized contracts by quantity, quality and delivery. An important part of futures trading is the concept of "rolling over" contracts. As futures contracts have expiration dates, traders often roll over their positions to the next contract month before the current one expires. This rollover process can introduce price discrepancies and volatility, especially around expiration dates, which can distort daily price data. "Rolling over" means that when you hold a contract, as it nears expiration, you close out your position in the current contract and open a new position in a later contract month. This is done to maintain exposure to the commodity without taking physical delivery. This maintains your position in the contract but as you close the expiring contract and open a new one, the price of the new contract may be different due to factors like storage costs, interest rates, and market expectations. An important metric to observe in this process is if the prices are in Contago or Backwardation. Contango is when the futures price is higher than the expected future spot price, often due to costs associated with storage and carrying charges. Backwardation is when the futures price is lower than the expected future spot price, which can occur when there is a high demand for the physical commodity in the short term. These can be observed in periods where there is uncertantiy in the market like an upcoming drought or when demand is expected to be higher in the short term. One could assume that consumable could be in backwardation during planting season when demand is high and in contango during harvest season when supply is abundant.
+
+```{r}
+# Aggregated to monthly 
+soybean_monthly <- soybean_tsibble %>%
+  index_by(month = ~ yearmonth(.)) %>%
+  summarise(Close = mean(Close, na.rm = TRUE))
+
+# Compute features / diagnostics dynamically
+spectral_entropy <- feat_spectral(soybean_monthly$Close)
+bp_stat <- box_pierce(soybean_monthly$Close)[1]     # Box-Pierce statistic
+bp_p <- box_pierce(soybean_monthly$Close)[2]        # p-value
+kpss_stat <- unitroot_kpss(soybean_monthly$Close)[1]
+kpss_p <- unitroot_kpss(soybean_monthly$Close)[2]
+nd <- unitroot_ndiffs(soybean_monthly$Close)
+nsd <- unitroot_nsdiffs(soybean_monthly$Close)
+lambda <- guerrero(soybean_monthly$Close)
+lb_stat <- ljung_box(soybean_monthly$Close)[1]
+lb_p <- ljung_box(soybean_monthly$Close)[2]
+
+# Combine into a tidy table
+soybean_diagnostics <- tibble(
+  Metric = c(
+    "Spectral Entropy",
+    "Breusch-Pagan Statistic",
+    "Breusch-Pagan p-value",
+    "KPSS Statistic",
+    "KPSS p-value",
+    "Number of differences (ndiffs)",
+    "Number of seasonal differences (nsdiffs)",
+    "Box-Cox lambda (Guerrero)",
+    "Ljung-Box Statistic",
+    "Ljung-Box p-value"
+  ),
+  Value = c(
+    spectral_entropy,
+    bp_stat,
+    bp_p,
+    kpss_stat,
+    kpss_p,
+    nd,
+    nsd,
+    lambda,
+    lb_stat,
+    lb_p
+  )
+)
+
+# Display as a neat kable
+kable(soybean_diagnostics,
+      caption = "Diagnostics for Monthly Soybean Futures Prices",
+      digits = 4,
+      format = "markdown")
+```
+
+We can see there needs to be differencing on the data because its not stationary 
+
+# Time series decomposition
+
+```{r}
+soybean_monthly  |>
+  model(
+    STL(Close ~ trend(window=21) +
+                   season(window='periodic'),
+    robust = TRUE)) |>
+  components() |>
+  autoplot()
+```
+
+We can see the series is non stationary
+
+```{r}
+soybean_monthly %>%
+  ACF(Close) %>%
+  autoplot()
+```
+
+```{r}
+
+soybean_diff <- soybean_monthly %>%
+  mutate(Close_diff = difference(Close, lag = 1))
+
+ggplot(soybean_diff, aes(x = month, y = Close_diff)) +
+  geom_line(color = "blue") +
+  labs(title = "First-Differenced Soybean Monthly Prices 2000-2025",
+       x = "Month",
+       y = "Differenced Close Price (USD)") +
+  theme_minimal()
+
+unitroot_kpss(soybean_diff$Close_diff)
+unitroot_ndiffs(soybean_diff$Close_diff)
+
+
+soybean_diff %>%
+  ACF(Close_diff) %>%
+  autoplot()
+
+
+
+
+```
+
+```{r}
+models <- soybean_monthly %>%
+  model(
+    SNAIVE = SNAIVE(Close),
+    ETS    = ETS(Close),
+    ARIMA  = ARIMA(Close),NNETAR(sqrt(Close))
+              
+  )
+model_names <- names(models)
+
+#models <- it_trans %>%
+#  model(
+#    ARIMA1 = ARIMA(Employed_tr ~ pdq(0,2,1)),
+#    ARIMA2 = ARIMA(Employed_tr ~ pdq(0,2,2)),
+#    ARIMA3 = ARIMA(Employed_tr ~ pdq(1,2,1)),
+#    ARIMA4 = ARIMA(Employed_tr ~ pdq(2,2,2)))
+
+models %>%
+  glance() %>%
+  arrange(AICc)
+
+
+```
