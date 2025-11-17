@@ -70,7 +70,7 @@ library(lubridate)
 
 # Soybean futures time series analysis
 
-This report is an investigation into time series forecasting of Soybean futures closing price from the Chicago Board of Trade (CBOT) using a collection of time series models. The data is the quoted futures price of soybeans from January 2000 to November 2025. The data was obtained from Yahoo Finance using the quantmod package in R using the ticker "ZS=F", the data was then converted into a CSV file that is read locally. The data contains daily prices for the soybean futures contract, including Open, High, Low, Close, Volume, and Adjusted Close prices. See Figure \@ref(fig:soybeanprices) for an overview of the closing prices over time.
+This report is an investigation into time series forecasting of Soybean futures closing price from the Chicago Board of Trade (CBOT) using a collection of time series models. The data is the quoted futures price of soybeans from January 2000 to November 2025. The data was obtained from Yahoo Finance using the quantmod package in R. The data contains daily prices for the soybean futures contract, including Open, High, Low, Close, Volume, and Adjusted Close prices. See Figure \@ref(fig:soybeanprices) for an overview of the closing prices over time.
 
 The futures prices are quoted as "front month" prices which means that the prices for "rolls" from one contract to the next as they expire. When this rollover happens it is due to different expiration months, storage costs, contango, backwardation. In our case we will verify this by looking at how similar Adjusted and Close prices are to each other
 
@@ -400,8 +400,7 @@ In the forecast, we will split the data into training and testing sets to evalua
 
 \begin{table}[h!]
 \centering
-\small
-\begin{tabularx}{\textwidth}{|l|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|>{\raggedright\arraybackslash}X|}
+\begin{tabularx}{\textwidth}{|l|X|X|X|}
 \hline
 \textbf{Model} & \textbf{Formula} & \textbf{Explanation} & \textbf{Pros / Cons} \\
 \hline
@@ -412,8 +411,7 @@ Automatically selects the best ARIMA(p,d,q) for the time series based on AICc. C
 \textbf{Cons:} Does not explicitly model seasonality; may overfit small datasets. \\
 \hline
 ARIMA\_FOURIER & 
-{\footnotesize
-$\Delta^d Y_t = \phi_1 \Delta^d Y_{t-1} + \dots + \phi_p \Delta^d Y_{t-p} + \varepsilon_t + \theta_1 \varepsilon_{t-1} + \dots + \theta_q \varepsilon_{t-q} + \sum_{k=1}^{K} \left[ \alpha_k \sin\left(\frac{2 \pi k t}{S}\right) + \beta_k \cos\left(\frac{2 \pi k t}{S}\right) \right], \quad \varepsilon_t \sim \text{white noise}$} & 
+$\Delta^d Y_t = \phi_1 \Delta^d Y_{t-1} + \dots + \phi_p \Delta^d Y_{t-p} + \varepsilon_t + \theta_1 \varepsilon_{t-1} + \dots + \theta_q \varepsilon_{t-q} + \sum_{k=1}^{K} \left[ \alpha_k \sin\left(\frac{2 \pi k t}{S}\right) + \beta_k \cos\left(\frac{2 \pi k t}{S}\right) \right], \quad \varepsilon_t \sim \text{white noise}$ & 
 ARIMA with Fourier terms for seasonality. Useful when seasonality is non-integer or complex (like monthly seasonal cycles). & 
 \textbf{Pros:} Captures complex seasonality, flexible; retains ARIMA properties. \newline
 \textbf{Cons:} Needs correct choice of $K$; more parameters can overfit. \\
@@ -434,7 +432,6 @@ Random walk with constant drift. Useful when series has a small trend. &
 \caption{Summary of Time Series Models, Formulas, Explanations, and Pros/Cons}
 \label{tab:ts_models}
 \end{table}
-
 
 
 
